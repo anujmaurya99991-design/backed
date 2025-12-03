@@ -1,4 +1,3 @@
-// server.js
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
@@ -23,8 +22,8 @@ const User = mongoose.model(
     username: String,
     avatar: String,
     status: { type: String, default: "active" },
-    referral_code: String, // user’s own code
-    referred_by: String,   // code of inviter (set ONLY via /api/bot/refer)
+    referral_code: String,
+    referred_by: String,
     created_at: { type: Date, default: Date.now }
   })
 );
@@ -43,10 +42,10 @@ const Txn = mongoose.model(
   "Txn",
   new mongoose.Schema({
     chatId: String,
-    type: String, // credit / debit
+    type: String,
     amount: Number,
     description: String,
-    status: String, // success / pending / failed
+    status: String,
     timestamp: { type: Date, default: Date.now },
     metadata: {}
   })
@@ -66,11 +65,11 @@ const UPI = mongoose.model(
 const Referral = mongoose.model(
   "Referral",
   new mongoose.Schema({
-    chatId: String,          // inviter chatId
-    referral_code: String,   // inviter's code
+    chatId: String,
+    referral_code: String,
     referred_users: [
       {
-        user_id: String,     // referred user's chatId
+        user_id: String,
         username: String,
         joined_at: Date,
         earned_amount: Number,
@@ -90,7 +89,7 @@ const Withdraw = mongoose.model(
     vpa: String,
     fee: Number,
     net_amount: Number,
-    status: String, // completed / pending / failed
+    status: String,
     initiated_at: Date,
     completed_at: Date,
     transaction_id: String,
@@ -98,7 +97,7 @@ const Withdraw = mongoose.model(
   })
 );
 
-// Helper – ensure wallet exists for a user
+// Helper Function
 async function ensureWallet(chatId) {
   let wallet = await Wallet.findOne({ chatId });
   if (!wallet) wallet = await Wallet.create({ chatId });
@@ -122,29 +121,17 @@ app.get("/api/user/info", async (req, res) => {
       chatId,
       username,
       avatar,
-      referral_code: referralCode,
-      // IMPORTANT: we do NOT set referred_by here
-      // only /api/bot/refer can set that
+      referral_code: referralCode
     });
 
-    // Create wallet automatically for new user
     await ensureWallet(chatId);
   } else {
-    // Update basic data only
     user.username = username || user.username;
     user.avatar = avatar || user.avatar;
     await user.save();
   }
 
-  res.json({
-    user_id: user.chatId,
-    username: user.username,
-    avatar: user.avatar,
-    created_at: user.created_at,
-    status: user.status,
-    referral_code: user.referral_code,
-    referred_by: user.referred_by || null
-  });
+  res.json(user);
 });
 
 // ----------------------------------------------
@@ -166,7 +153,6 @@ app.get("/api/wallet/balance", async (req, res) => {
 
 app.get("/api/wallet/transactions", async (req, res) => {
   const { chatId, limit = 20, offset = 0 } = req.query;
-  if (!chatId) return res.status(400).json({ error: "chatId required" });
 
   const tx = await Txn.find({ chatId })
     .sort({ timestamp: -1 })
@@ -176,26 +162,16 @@ app.get("/api/wallet/transactions", async (req, res) => {
   const total = await Txn.countDocuments({ chatId });
 
   res.json({
-    transactions: tx.map(t => ({
-      id: t._id,
-      type: t.type,
-      amount: t.amount.toFixed(2),
-      description: t.description,
-      status: t.status,
-      timestamp: t.timestamp,
-      metadata: t.metadata
-    })),
+    transactions: tx,
     total
   });
 });
 
 // ----------------------------------------------
-// 3. UPI (GET = create/update)
+// 3. UPI
 // ----------------------------------------------
 app.get("/api/upi", async (req, res) => {
   const { chatId, vpa, bank_name } = req.query;
-
-  if (!chatId) return res.status(400).json({ error: "chatId required" });
 
   let upi = await UPI.findOne({ chatId });
 
@@ -217,12 +193,7 @@ app.get("/api/upi", async (req, res) => {
     await upi.save();
   }
 
-  res.json({
-    vpa: upi.vpa,
-    is_verified: upi.is_verified,
-    linked_at: upi.linked_at,
-    bank_name: upi.bank_name
-  });
+  res.json(upi);
 });
 
 // ----------------------------------------------
@@ -231,16 +202,12 @@ app.get("/api/upi", async (req, res) => {
 app.post("/api/withdraw/initiate", async (req, res) => {
   const { chatId, amount, vpa } = req.body;
 
-  if (!chatId || !amount || !vpa) {
-    return res.status(400).json({ error: "chatId, amount, vpa required" });
-  }
-
   const fee = 3.0;
   const net = Number(amount) - fee;
 
   const wd = await Withdraw.create({
     chatId,
-    amount: Number(amount),
+    amount,
     vpa,
     fee,
     net_amount: net,
@@ -250,55 +217,34 @@ app.post("/api/withdraw/initiate", async (req, res) => {
 
   res.json({
     withdrawal_id: wd._id,
-    amount: wd.amount.toFixed(2),
-    fee: wd.fee.toFixed(2),
-    net_amount: wd.net_amount.toFixed(2),
-    estimated_time: "2-4 hours",
-    status: wd.status
+    amount,
+    fee,
+    net_amount: net,
+    status: "pending",
+    estimated_time: "2-4 hours"
   });
 });
 
 app.get("/api/withdraw/history", async (req, res) => {
-  const { chatId, limit = 10, offset = 0 } = req.query;
-  if (!chatId) return res.status(400).json({ error: "chatId required" });
+  const { chatId } = req.query;
 
-  const data = await Withdraw.find({ chatId })
-    .sort({ initiated_at: -1 })
-    .skip(Number(offset))
-    .limit(Number(limit));
+  const data = await Withdraw.find({ chatId }).sort({ initiated_at: -1 });
 
-  const total = await Withdraw.countDocuments({ chatId });
-
-  res.json({
-    withdrawals: data.map(w => ({
-      id: w._id,
-      amount: w.amount.toFixed(2),
-      status: w.status,
-      vpa: w.vpa,
-      initiated_at: w.initiated_at,
-      completed_at: w.completed_at,
-      transaction_id: w.transaction_id,
-      failure_reason: w.failure_reason
-    })),
-    total
-  });
+  res.json({ withdrawals: data });
 });
 
 // ----------------------------------------------
-// 5. REFERRAL INFO + LIST (READ ONLY)
+// 5. REFERRAL SUMMARY
 // ----------------------------------------------
 app.get("/api/referral", async (req, res) => {
   const { chatId } = req.query;
-  if (!chatId) return res.status(400).json({ error: "chatId required" });
 
   const user = await User.findOne({ chatId });
-  if (!user) return res.status(404).json({ error: "User not found" });
-
   const ref = await Referral.findOne({ chatId });
 
   res.json({
     code: user.referral_code,
-    link: `https://t.me/winzoplay_bot?start=${user.referral_code}`, // change bot username as needed
+    link: `https://t.me/winzoplay_bot?start=${user.referral_code}`,
     total_referrals: ref?.referred_users.length || 0,
     successful_referrals: ref?.referred_users.filter(x => x.is_active).length || 0,
     total_earned: (ref?.total_earned || 0).toFixed(2),
@@ -307,45 +253,29 @@ app.get("/api/referral", async (req, res) => {
   });
 });
 
+// ----------------------------------------------
+// 6. REFERRAL USER LIST
+// ----------------------------------------------
 app.get("/api/referral/users", async (req, res) => {
-  const { chatId, limit = 20, offset = 0 } = req.query;
-  if (!chatId) return res.status(400).json({ error: "chatId required" });
+  const { chatId } = req.query;
 
   const ref = await Referral.findOne({ chatId });
-
-  const list =
-    ref?.referred_users.slice(
-      Number(offset),
-      Number(offset) + Number(limit)
-    ) || [];
-
   res.json({
-    referrals: list.map(u => ({
-      user_id: u.user_id,
-      username: u.username,
-      joined_at: u.joined_at,
-      status: u.is_active ? "active" : "pending",
-      earned_amount: u.earned_amount.toFixed(2),
-      is_active: u.is_active
-    })),
+    referrals: ref?.referred_users || [],
     total: ref?.referred_users.length || 0
   });
 });
 
 // ----------------------------------------------
-// 6. BOT REFERRAL API (ONLY WAY TO CREATE REFERRALS)
+// 7. BOT REFERRAL (ONLY WAY TO ADD REFERRAL)
 // ----------------------------------------------
 app.post("/api/bot/refer", async (req, res) => {
   try {
     const { chatId, username, avatar, ref } = req.body;
 
-    if (!chatId) {
-      return res.status(400).json({ success: false, error: "chatId missing" });
-    }
-
     let user = await User.findOne({ chatId });
 
-    // NEW USER coming from bot
+    // NEW USER
     if (!user) {
       const referralCode = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -357,10 +287,9 @@ app.post("/api/bot/refer", async (req, res) => {
         referred_by: ref || null
       });
 
-      // Ensure wallet
       await ensureWallet(chatId);
 
-      // Handle referral linking if ref present
+      // Apply referral reward
       if (ref) {
         const inviter = await User.findOne({ referral_code: ref });
 
@@ -375,35 +304,49 @@ app.post("/api/bot/refer", async (req, res) => {
             });
           }
 
+          // Add referral entry
           refDoc.referred_users.push({
             user_id: chatId,
-            username: username || "",
+            username,
             joined_at: new Date(),
-            earned_amount: 0,
-            is_active: false
+            earned_amount: 3,
+            is_active: true
           });
 
+          refDoc.total_earned += 3;
           await refDoc.save();
+
+          // Credit +3 to inviter wallet
+          let inviterWallet = await ensureWallet(inviter.chatId);
+          inviterWallet.balance += 3;
+          await inviterWallet.save();
+
+          // Add transaction
+          await Txn.create({
+            chatId: inviter.chatId,
+            type: "credit",
+            amount: 3,
+            description: "Referral Reward",
+            status: "success",
+            metadata: { referred_user: chatId }
+          });
         }
       }
     } else {
-      // Existing user: we NEVER change referred_by here
-      // Only set it once at creation time
+      // Update username/avatar only
       user.username = username || user.username;
       user.avatar = avatar || user.avatar;
       await user.save();
     }
 
-    return res.json({
+    res.json({
       success: true,
       referral_code: user.referral_code,
-      referred_by: user.referred_by || null
+      referred_by: user.referred_by
     });
   } catch (err) {
-    console.error("Bot refer error:", err);
-    return res
-      .status(500)
-      .json({ success: false, error: "Internal server error" });
+    console.error("Referral error:", err);
+    res.json({ success: false });
   }
 });
 
