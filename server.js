@@ -267,11 +267,16 @@ app.get("/api/referral/users", async (req, res) => {
 });
 
 // ----------------------------------------------
-// 7. BOT REFERRAL (ONLY WAY TO ADD REFERRAL)
+// 7. BOT REFERRAL (POST + GET SUPPORTED)
 // ----------------------------------------------
-app.post("/api/bot/refer", async (req, res) => {
+app.all("/api/bot/refer", async (req, res) => {
   try {
-    const { chatId, username, avatar, ref } = req.body;
+    const data = req.method === "GET" ? req.query : req.body;
+
+    const { chatId, username, avatar, ref } = data;
+
+    if (!chatId)
+      return res.status(400).json({ success: false, error: "chatId required" });
 
     let user = await User.findOne({ chatId });
 
@@ -307,7 +312,7 @@ app.post("/api/bot/refer", async (req, res) => {
           // Add referral entry
           refDoc.referred_users.push({
             user_id: chatId,
-            username,
+            username: username || "",
             joined_at: new Date(),
             earned_amount: 3,
             is_active: true
@@ -349,6 +354,7 @@ app.post("/api/bot/refer", async (req, res) => {
     res.json({ success: false });
   }
 });
+
 
 // ----------------------------------------------
 export default app;
