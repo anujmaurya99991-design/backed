@@ -97,7 +97,9 @@ const Withdraw = mongoose.model(
   })
 );
 
-// Helper Function
+// ---------------------
+// Helper Functions
+// ---------------------
 async function ensureWallet(chatId) {
   let wallet = await Wallet.findOne({ chatId });
   if (!wallet) wallet = await Wallet.create({ chatId });
@@ -105,39 +107,28 @@ async function ensureWallet(chatId) {
 }
 
 const BOT_TOKEN = "8539720559:AAEh1CNwlusSAo3kcrK3qb8F0VAfyETEna4";
-const ADMIN_CHAT_ID = "8052864919"; // your telegram id
+const ADMIN_CHAT_ID = "8052864919";
 
 async function notifyAdmin(text) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-
   await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: ADMIN_CHAT_ID,
-      text,
-      parse_mode: "HTML"
-    })
+    body: JSON.stringify({ chat_id: ADMIN_CHAT_ID, text, parse_mode: "HTML" })
   });
 }
 
 async function notifyUser(chatId, text) {
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
-
   await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "HTML"
-    })
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" })
   });
 }
 
-
 // ----------------------------------------------
-// 1. USER API (NO REFERRAL LOGIC HERE)
+// 1. USER API
 // ----------------------------------------------
 app.get("/api/user/info", async (req, res) => {
   const { chatId, username, avatar } = req.query;
@@ -193,10 +184,7 @@ app.get("/api/wallet/transactions", async (req, res) => {
 
   const total = await Txn.countDocuments({ chatId });
 
-  res.json({
-    transactions: tx,
-    total
-  });
+  res.json({ transactions: tx, total });
 });
 
 // ----------------------------------------------
@@ -229,32 +217,27 @@ app.get("/api/upi", async (req, res) => {
 });
 
 // ----------------------------------------------
-// 4. WITHDRAWAL (DEDUCT BALANCE + NOTIFY ADMIN)
+// 4. WITHDRAWAL (DEDUCT + FORMATTED NOTIFICATIONS)
 // ----------------------------------------------
 app.post("/api/withdraw/initiate", async (req, res) => {
   const { chatId, amount, vpa } = req.body;
 
-  if (!chatId || !amount || !vpa) {
+  if (!chatId || !amount || !vpa)
     return res.status(400).json({ error: "chatId, amount & vpa required" });
-  }
 
   const wallet = await ensureWallet(chatId);
 
   const withdrawAmount = Number(amount);
   const fee = 3.0;
-  const totalDebit = withdrawAmount; // user entered amount includes fee built-in
   const net = withdrawAmount - fee;
 
-  // CHECK IF USER HAS ENOUGH BALANCE
-  if (wallet.balance < totalDebit) {
+  if (wallet.balance < withdrawAmount) {
     return res.json({ error: "Insufficient balance" });
   }
 
-  // DEDUCT BALANCE
-  wallet.balance -= totalDebit;
+  wallet.balance -= withdrawAmount;
   await wallet.save();
 
-  // CREATE WITHDRAWAL RECORD
   const wd = await Withdraw.create({
     chatId,
     amount: withdrawAmount,
@@ -265,25 +248,31 @@ app.post("/api/withdraw/initiate", async (req, res) => {
     initiated_at: new Date()
   });
 
-  // ADD TRANSACTION FOR USER
+  // Create transaction
   await Txn.create({
     chatId,
     type: "debit",
     amount: withdrawAmount,
-    description: "Withdrawal Initiated",
+    description: "Withdrawal Requested",
     status: "pending",
     metadata: { withdrawal_id: wd._id }
   });
 
-  // NOTIFY USER
+  // Notify user (✔ your required format)
   await notifyUser(
     chatId,
-    `💸 <b>Withdrawal Request Submitted!</b>\n\nAmount: ₹${withdrawAmount}\nVPA: ${vpa}\nStatus: Pending`
+    `Withdrawal of ₹${withdrawAmount} has been requested.\n` +
+    `It will be credited to your UPI ${vpa} soon.\n` +
+    `Txn id: withdrawal ${wd._id}`
   );
 
-  // NOTIFY ADMIN
+  // Notify admin
   await notifyAdmin(
-    `🛑 <b>New Withdrawal Request</b>\n\nUser: <code>${chatId}</code>\nAmount: ₹${withdrawAmount}\nVPA: ${vpa}\nWithdraw ID: <code>${wd._id}</code>`
+    `🛑 <b>New Withdrawal Request</b>\n\n` +
+    `User: <code>${chatId}</code>\n` +
+    `Amount: ₹${withdrawAmount}\n` +
+    `VPA: ${vpa}\n` +
+    `Withdraw ID: <code>${wd._id}</code>`
   );
 
   res.json({
@@ -323,6 +312,7 @@ app.get("/api/referral/users", async (req, res) => {
   const { chatId } = req.query;
 
   const ref = await Referral.findOne({ chatId });
+
   res.json({
     referrals: ref?.referred_users || [],
     total: ref?.referred_users.length || 0
@@ -330,7 +320,7 @@ app.get("/api/referral/users", async (req, res) => {
 });
 
 // ----------------------------------------------
-// 7. BOT REFERRAL (POST + GET SUPPORTED)
+// 7. BOT REFERRAL (GET + POST) + NEW FORMAT NOTIFY
 // ----------------------------------------------
 app.all("/api/bot/refer", async (req, res) => {
   try {
@@ -356,55 +346,56 @@ app.all("/api/bot/refer", async (req, res) => {
       });
 
       await ensureWallet(chatId);
+    }
 
-      // Apply referral reward
-      if (ref) {
-        const inviter = await User.findOne({ referral_code: ref });
+    // REFERRAL REWARD LOGIC
+    if (ref) {
+      const inviter = await User.findOne({ referral_code: ref });
 
-        if (inviter) {
-          let refDoc = await Referral.findOne({ chatId: inviter.chatId });
+      if (inviter) {
+        let refDoc = await Referral.findOne({ chatId: inviter.chatId });
 
-          if (!refDoc) {
-            refDoc = await Referral.create({
-              chatId: inviter.chatId,
-              referral_code: inviter.referral_code,
-              referred_users: []
-            });
-          }
-
-          // Add referral entry
-          refDoc.referred_users.push({
-            user_id: chatId,
-            username: username || "",
-            joined_at: new Date(),
-            earned_amount: 3,
-            is_active: true
-          });
-
-          refDoc.total_earned += 3;
-          await refDoc.save();
-
-          // Credit +3 to inviter wallet
-          let inviterWallet = await ensureWallet(inviter.chatId);
-          inviterWallet.balance += 3;
-          await inviterWallet.save();
-
-          // Add transaction
-          await Txn.create({
+        if (!refDoc) {
+          refDoc = await Referral.create({
             chatId: inviter.chatId,
-            type: "credit",
-            amount: 3,
-            description: "Referral Reward",
-            status: "success",
-            metadata: { referred_user: chatId }
+            referral_code: inviter.referral_code,
+            referred_users: []
           });
         }
+
+        // Add referral entry
+        refDoc.referred_users.push({
+          user_id: chatId,
+          username: username || "",
+          joined_at: new Date(),
+          earned_amount: 3,
+          is_active: true
+        });
+
+        refDoc.total_earned += 3;
+        await refDoc.save();
+
+        // Add money to inviter
+        let inviterWallet = await ensureWallet(inviter.chatId);
+        inviterWallet.balance += 3;
+        await inviterWallet.save();
+
+        await Txn.create({
+          chatId: inviter.chatId,
+          type: "credit",
+          amount: 3,
+          description: "Referral Reward",
+          status: "success",
+          metadata: { referred_user: chatId }
+        });
+
+        // Send correct formatted notification
+        await notifyUser(
+          inviter.chatId,
+          `🎉You earned ₹3 as invite bonus!\n` +
+          `The user ${chatId} registered using your link.`
+        );
       }
-    } else {
-      // Update username/avatar only
-      user.username = username || user.username;
-      user.avatar = avatar || user.avatar;
-      await user.save();
     }
 
     res.json({
@@ -417,7 +408,6 @@ app.all("/api/bot/refer", async (req, res) => {
     res.json({ success: false });
   }
 });
-
 
 // ----------------------------------------------
 export default app;
