@@ -389,7 +389,7 @@ app.all("/api/bot/refer", async (req, res) => {
         // Send correct formatted notification
         await notifyUser(
           inviter.chatId,
-          `🎉You earned ${earned_amount} as invite bonus! The user ${chatId} registered using your link.`
+          `🎉You earned 3 as invite bonus! The user ${chatId} registered using your link.`
         );
       }
     }
