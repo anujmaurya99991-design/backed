@@ -1304,7 +1304,7 @@
         
         // Update invite link
         if (data.referral.link) {
-          inviteLink.textContent = `https://t.me/Webt2AppBot`;
+          inviteLink.textContent = `https://t.me/Webt2AppBot?start=${data.user.referral_code}`;
         } else if (data.user?.referral_code) {
           inviteLink.textContent = `https://t.me/Webt2AppBot?start=${data.user.referral_code}`;
         }
