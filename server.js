@@ -436,4 +436,84 @@ app.get("/api/withdraw/history", async (req, res) => {
 });
 
 // ----------------------------------------------
+// 9. UPDATE WITHDRAW STATUS (ADMIN)
+// ----------------------------------------------
+app.post("/api/withdraw/update", async (req, res) => {
+  const { id, status, transaction_id, failure_reason } = req.body;
+
+  if (!id || !status) {
+    return res.status(400).json({ error: "id and status required" });
+  }
+
+  if (!["completed", "rejected"].includes(status)) {
+    return res.status(400).json({ error: "Invalid status" });
+  }
+
+  const wd = await Withdraw.findById(id);
+
+  if (!wd) {
+    return res.status(404).json({ error: "Withdrawal not found" });
+  }
+
+  // Prevent double processing
+  if (wd.status !== "pending") {
+    return res.json({ error: "Withdrawal already processed" });
+  }
+
+  wd.status = status;
+
+  // --------------------
+  // COMPLETED
+  // --------------------
+  if (status === "completed") {
+    wd.completed_at = new Date();
+    wd.transaction_id = transaction_id || `TXN_${Date.now()}`;
+
+    await Txn.updateOne(
+      { "metadata.withdrawal_id": wd._id },
+      { status: "success" }
+    );
+
+    await notifyUser(
+      wd.chatId,
+      `✅ Withdrawal of ₹${wd.amount} has been completed.\n` +
+      `Amount credited to your UPI ${wd.vpa}.\n` +
+      `Txn id: ${wd.transaction_id}`
+    );
+  }
+
+  // --------------------
+  // REJECTED (REFUND)
+  // --------------------
+  if (status === "rejected") {
+    wd.failure_reason = failure_reason || "Rejected by admin";
+
+    // Refund wallet
+    const wallet = await ensureWallet(wd.chatId);
+    wallet.balance += wd.amount;
+    await wallet.save();
+
+    await Txn.updateOne(
+      { "metadata.withdrawal_id": wd._id },
+      { status: "failed" }
+    );
+
+    await notifyUser(
+      wd.chatId,
+      `❌ Withdrawal of ₹${wd.amount} was rejected.\n` +
+      `Reason: ${wd.failure_reason}\n` +
+      `Amount has been refunded to your wallet.`
+    );
+  }
+
+  await wd.save();
+
+  res.json({
+    success: true,
+    id: wd._id,
+    status: wd.status
+  });
+});
+        
+// ----------------------------------------------
 export default app;
