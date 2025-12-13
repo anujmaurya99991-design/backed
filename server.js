@@ -269,7 +269,9 @@ app.post("/api/withdraw/initiate", async (req, res) => {
     `User: <code>${chatId}</code>\n` +
     `Amount: ₹${withdrawAmount}\n` +
     `VPA: ${vpa}\n` +
-    `Withdraw ID: <code>${wd._id}</code>`
+    `Withdraw ID: <code>${wd._id}</code>` +
+    `Use this link to complete the payment - https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=completed&transaction_id=UPI_TXN_998877`+
+    `Use this link to reject the payment - https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=rejected&failure_reason=Invalid%20UPI%20ID`
   );
 
   res.json({
