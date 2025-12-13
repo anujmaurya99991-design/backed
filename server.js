@@ -406,4 +406,34 @@ app.all("/api/bot/refer", async (req, res) => {
 });
 
 // ----------------------------------------------
+// 8. WITHDRAW HISTORY (USER)
+// ----------------------------------------------
+app.get("/api/withdraw/history", async (req, res) => {
+  const { chatId } = req.query;
+
+  if (!chatId) {
+    return res.status(400).json({ error: "chatId required" });
+  }
+
+  const withdrawals = await Withdraw.find({ chatId })
+    .sort({ initiated_at: -1 });
+
+  res.json({
+    total: withdrawals.length,
+    withdrawals: withdrawals.map(w => ({
+      id: w._id,
+      amount: w.amount,
+      fee: w.fee,
+      net_amount: w.net_amount,
+      status: w.status,
+      vpa: w.vpa,
+      initiated_at: w.initiated_at,
+      completed_at: w.completed_at,
+      transaction_id: w.transaction_id,
+      failure_reason: w.failure_reason
+    }))
+  });
+});
+
+// ----------------------------------------------
 export default app;
