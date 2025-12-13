@@ -436,10 +436,10 @@ app.get("/api/withdraw/history", async (req, res) => {
 });
 
 // ----------------------------------------------
-// 9. UPDATE WITHDRAW STATUS (ADMIN)
+// 9. UPDATE WITHDRAW STATUS (ADMIN) - GET VERSION
 // ----------------------------------------------
-app.post("/api/withdraw/update", async (req, res) => {
-  const { id, status, transaction_id, failure_reason } = req.body;
+app.get("/api/withdraw/update", async (req, res) => {
+  const { id, status, transaction_id, failure_reason } = req.query;
 
   if (!id || !status) {
     return res.status(400).json({ error: "id and status required" });
@@ -455,7 +455,7 @@ app.post("/api/withdraw/update", async (req, res) => {
     return res.status(404).json({ error: "Withdrawal not found" });
   }
 
-  // Prevent double processing
+  // prevent double update
   if (wd.status !== "pending") {
     return res.json({ error: "Withdrawal already processed" });
   }
@@ -476,7 +476,7 @@ app.post("/api/withdraw/update", async (req, res) => {
 
     await notifyUser(
       wd.chatId,
-      `✅ Withdrawal of ₹${wd.amount} has been completed.\n` +
+      `Withdrawal of ₹${wd.amount} has been completed.\n` +
       `Amount credited to your UPI ${wd.vpa}.\n` +
       `Txn id: ${wd.transaction_id}`
     );
@@ -488,7 +488,6 @@ app.post("/api/withdraw/update", async (req, res) => {
   if (status === "rejected") {
     wd.failure_reason = failure_reason || "Rejected by admin";
 
-    // Refund wallet
     const wallet = await ensureWallet(wd.chatId);
     wallet.balance += wd.amount;
     await wallet.save();
@@ -500,7 +499,7 @@ app.post("/api/withdraw/update", async (req, res) => {
 
     await notifyUser(
       wd.chatId,
-      `❌ Withdrawal of ₹${wd.amount} was rejected.\n` +
+      `Withdrawal of ₹${wd.amount} was rejected.\n` +
       `Reason: ${wd.failure_reason}\n` +
       `Amount has been refunded to your wallet.`
     );
@@ -514,6 +513,6 @@ app.post("/api/withdraw/update", async (req, res) => {
     status: wd.status
   });
 });
-        
+                      
 // ----------------------------------------------
 export default app;
