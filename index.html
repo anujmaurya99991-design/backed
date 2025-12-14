@@ -2139,7 +2139,7 @@
             await loadUserData(chatId);
             closeModal();
           } else {
-            notyf.error(data.message || 'Withdrawal failed');
+            notyf.error(data.message || 'Withdrawal request submitted successfully');
           }
         } catch (error) {
           notyf.error('Network error. Please try again.');
