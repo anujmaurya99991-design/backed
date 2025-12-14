@@ -106,7 +106,7 @@ async function ensureWallet(chatId) {
   return wallet;
 }
 
-const BOT_TOKEN = "8539720559:AAEh1CNwlusSAo3kcrK3qb8F0VAfyETEna4";
+const BOT_TOKEN = "8539720559:AAEWiYhkodovrm0pNX56COrAx2sP2lyedFU";
 const ADMIN_CHAT_ID = "8052864919";
 
 async function notifyAdmin(text) {
