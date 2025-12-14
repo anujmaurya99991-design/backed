@@ -292,13 +292,13 @@ app.post("/api/withdraw/initiate", async (req, res) => {
     [
       {
         text: "✅ Approve",
-        url: `https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=completed&transaction_id=UPI_TXN_${Date.now()}`
+        url: `https://backed-theta.vercel.app/api/withdraw/update?id=${wd._id}&status=completed&transaction_id=UPI_TXN_${Date.now()}`
       }
     ],
     [
       {
         text: "❌ Reject",
-        url: `https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=rejected&failure_reason=Invalid%20UPI%20ID`
+        url: `https://backed-theta.vercel.app/api/withdraw/update?id=${wd._id}&status=rejected&failure_reason=Invalid%20UPI%20ID`
       }
     ]
   ]
@@ -326,7 +326,7 @@ app.get("/api/referral", async (req, res) => {
 
   res.json({
     code: user.referral_code,
-    link: `https://t.me/winzoplay_bot?start=${user.referral_code}`,
+    link: `http://t.me/Winzo_Upii_Cash_bot?start=${user.referral_code}`,
     total_referrals: ref?.referred_users.length || 0,
     successful_referrals: ref?.referred_users.filter(x => x.is_active).length || 0,
     total_earned: (ref?.total_earned || 0).toFixed(2),
