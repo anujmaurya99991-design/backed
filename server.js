@@ -127,6 +127,24 @@ async function notifyUser(chatId, text) {
   });
 }
 
+// ✅ NEW: Admin notification with inline buttons
+async function notifyAdminWithButtons(text, buttons) {
+  const url = `https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`;
+
+  await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: ADMIN_CHAT_ID,
+      text,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: buttons
+      }
+    })
+  });
+}
+
 // ----------------------------------------------
 // 1. USER API
 // ----------------------------------------------
@@ -264,15 +282,28 @@ app.post("/api/withdraw/initiate", async (req, res) => {
     `Withdrawal of ₹${withdrawAmount} has been requested.It will be credited to your UPI ${vpa} soon. (Txn id: withdrawal ${wd._id})`);
 
   // Notify admin
-  await notifyAdmin(
-    `🛑 <b>New Withdrawal Request</b>\n\n` +
-    `User: <code>${chatId}</code>\n` +
-    `Amount: ₹${withdrawAmount}\n` +
-    `VPA: ${vpa}\n` +
-    `Withdraw ID: <code>${wd._id}</code>` +
-    `Use this link to complete the payment - https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=completed&transaction_id=UPI_TXN_998877`+
-    `Use this link to reject the payment - https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=rejected&failure_reason=Invalid%20UPI%20ID`
-  );
+  await notifyAdminWithButtons(
+  `🛑 <b>New Withdrawal Request</b>\n\n` +
+  `User: <code>${chatId}</code>\n` +
+  `Amount: ₹${withdrawAmount}\n` +
+  `VPA: ${vpa}\n` +
+  `Withdraw ID: <code>${wd._id}</code>`,
+  [
+    [
+      {
+        text: "✅ Approve",
+        url: `https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=completed&transaction_id=UPI_TXN_${Date.now()}`
+      }
+    ],
+    [
+      {
+        text: "❌ Reject",
+        url: `https://backed-nu.vercel.app/api/withdraw/update?id=${wd._id}&status=rejected&failure_reason=Invalid%20UPI%20ID`
+      }
+    ]
+  ]
+);
+
 
   res.json({
     withdrawal_id: wd._id,
@@ -438,7 +469,7 @@ app.get("/api/withdraw/history", async (req, res) => {
 });
 
 // ----------------------------------------------
-// 9. UPDATE WITHDRAW STATUS (ADMIN) - GET VERSION
+// ADMIN: UPDATE WITHDRAW STATUS (GET)
 // ----------------------------------------------
 app.get("/api/withdraw/update", async (req, res) => {
   const { id, status, transaction_id, failure_reason } = req.query;
@@ -447,27 +478,14 @@ app.get("/api/withdraw/update", async (req, res) => {
     return res.status(400).json({ error: "id and status required" });
   }
 
-  if (!["completed", "rejected"].includes(status)) {
-    return res.status(400).json({ error: "Invalid status" });
-  }
-
   const wd = await Withdraw.findById(id);
-
-  if (!wd) {
-    return res.status(404).json({ error: "Withdrawal not found" });
+  if (!wd || wd.status !== "pending") {
+    return res.json({ error: "Invalid or already processed withdrawal" });
   }
 
-  // prevent double update
-  if (wd.status !== "pending") {
-    return res.json({ error: "Withdrawal already processed" });
-  }
-
-  wd.status = status;
-
-  // --------------------
-  // COMPLETED
-  // --------------------
+  // ---------------- COMPLETED ----------------
   if (status === "completed") {
+    wd.status = "completed";
     wd.completed_at = new Date();
     wd.transaction_id = transaction_id || `TXN_${Date.now()}`;
 
@@ -484,10 +502,9 @@ app.get("/api/withdraw/update", async (req, res) => {
     );
   }
 
-  // --------------------
-  // REJECTED (REFUND)
-  // --------------------
+  // ---------------- REJECTED ----------------
   if (status === "rejected") {
+    wd.status = "rejected";
     wd.failure_reason = failure_reason || "Rejected by admin";
 
     const wallet = await ensureWallet(wd.chatId);
@@ -515,6 +532,6 @@ app.get("/api/withdraw/update", async (req, res) => {
     status: wd.status
   });
 });
-                      
+
 // ----------------------------------------------
 export default app;
