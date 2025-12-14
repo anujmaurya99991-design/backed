@@ -2142,7 +2142,7 @@
             notyf.error(data.message || 'Withdrawal request submitted successfully');
           }
         } catch (error) {
-          notyf.error('Network error. Please try again.');
+          notyf.success('Network error. Please try again.');
         } finally {
           setLoadingState(false);
           modalPrimary.disabled = false;
